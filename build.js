@@ -6,6 +6,7 @@
 //   conteudo.enc.json    o conteúdo criptografado
 //
 // Uso:  node build.js              (pede a senha no terminal)
+//       node build.js --publicar   (gera, faz commit e envia para o GitHub)
 //       TRILHA_SENHA=... node build.js --saida pasta   (para testes)
 // A pasta fonte/ fica no .gitignore e nunca é publicada.
 
@@ -150,4 +151,13 @@ document.getElementById("f").addEventListener("submit", async e => {
   fs.writeFileSync(path.join(saida, "conteudo.enc.json"), JSON.stringify(criptografar(html, senha)));
   fs.writeFileSync(path.join(saida, "index.html"), LOADER);
   console.log(`Pronto: index.html e conteudo.enc.json gerados em ${saida} (${Math.round(html.length / 1024)} KB de conteúdo).`);
+  if (process.argv.includes("--publicar") && saida === raiz) {
+    const { execSync } = require("child_process");
+    const git = cmd => execSync(`git ${cmd}`, { cwd: raiz, stdio: "inherit" });
+    git("add index.html conteudo.enc.json build.js README.md .gitignore .nojekyll");
+    try { git(`commit -q -m "Atualiza a trilha (${new Date().toISOString().slice(0, 10)})"`); }
+    catch (e) { console.log("Nada mudou desde a última publicação."); return; }
+    git("push -q origin main");
+    console.log("Publicado. O GitHub Pages atualiza em cerca de 1 minuto.");
+  }
 })();
