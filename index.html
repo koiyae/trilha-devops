@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Trilha DevOps</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15.5' fill='%23221f1c'/%3E%3Ccircle cx='9.5' cy='16' r='4' fill='%23efe9de'/%3E%3Cpath d='M14.5 16h3' stroke='%23efe9de' stroke-opacity='.45' stroke-width='2' stroke-linecap='round'/%3E%3Ccircle cx='22.5' cy='16' r='4' fill='none' stroke='%23e3a06a' stroke-width='2.2'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#151413">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: #151413; color: #efe9de; font: 15px/1.6 "Segoe UI", system-ui, sans-serif; display: grid; place-items: center; padding: 24px max(16px, env(safe-area-inset-right, 0px)) 24px max(16px, env(safe-area-inset-left, 0px)); }
+  form { width: min(380px, 100%); background: #2a2825; border-radius: 26px; padding: 7px; box-shadow: 0 0 0 1px rgba(0,0,0,.5), 0 18px 40px -24px rgba(0,0,0,.9); }
+  .in { background: #12110f; border-radius: 20px; padding: 26px 24px 24px; box-shadow: inset 0 0 0 1px rgba(239,233,222,.08); display: grid; gap: 14px; }
+  h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+  p { margin: 0; color: rgba(239,233,222,.62); font-size: 14px; }
+  input[type=password] { width: 100%; font: inherit; color: #efe9de; background: #100f0e; border: none; border-radius: 999px; padding: 11px 18px; box-shadow: inset 0 0 0 1px rgba(239,233,222,.14), inset 0 2px 4px rgba(0,0,0,.4); }
+  input[type=password]:focus { outline: 2px solid rgba(239,233,222,.35); outline-offset: 2px; }
+  label.lembrar { display: flex; gap: 8px; align-items: center; font-size: 13.5px; color: rgba(239,233,222,.62); cursor: pointer; }
+  button { font: inherit; font-weight: 600; color: #151413; background: linear-gradient(#fbf6ee, #ece3d4); border: none; border-radius: 999px; padding: 11px 18px; cursor: pointer; box-shadow: 0 0 18px -2px rgba(255,140,60,.45); }
+  button:disabled { opacity: .6; cursor: wait; }
+  .erro { color: #f2b28a; font-size: 13.5px; min-height: 1.4em; }
+</style>
+</head>
+<body>
+<form id="f" autocomplete="on">
+  <div class="in">
+    <h1>Trilha DevOps</h1>
+    <p>Conteúdo privado. Digite a senha para abrir.</p>
+    <input type="text" name="username" value="trilha-devops" autocomplete="username" hidden>
+    <input id="senha" type="password" autocomplete="current-password" placeholder="Senha" aria-label="Senha" required>
+    <label class="lembrar"><input id="lembrar" type="checkbox" checked> Lembrar neste aparelho</label>
+    <button id="ok" type="submit">Abrir</button>
+    <div class="erro" id="erro" role="alert"></div>
+  </div>
+</form>
+<script>
+const CHAVE = "trilha-chave";
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+let pacote = null;
+async function obterPacote() {
+  if (!pacote) { const r = await fetch("conteudo.enc.json", { cache: "no-cache" }); if (!r.ok) throw new Error("rede"); pacote = await r.json(); }
+  return pacote;
+}
+async function abrir(chave) {
+  const p = await obterPacote();
+  const claro = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(p.iv) }, chave, b64(p.ct));
+  const html = new TextDecoder().decode(claro);
+  document.open(); document.write(html); document.close();
+}
+async function chaveDaSenha(senha) {
+  const p = await obterPacote();
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(senha), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({ name: "PBKDF2", salt: b64(p.salt), iterations: p.iter, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, true, ["decrypt"]);
+}
+(async () => {
+  let salva = null;
+  try { salva = localStorage.getItem(CHAVE); } catch (e) {}
+  if (salva) {
+    try {
+      const k = await crypto.subtle.importKey("raw", b64(salva), "AES-GCM", false, ["decrypt"]);
+      await abrir(k); return;
+    } catch (e) { try { localStorage.removeItem(CHAVE); } catch (e2) {} }
+  }
+  document.getElementById("senha").focus();
+})();
+document.getElementById("f").addEventListener("submit", async e => {
+  e.preventDefault();
+  const ok = document.getElementById("ok"), erro = document.getElementById("erro");
+  ok.disabled = true; ok.textContent = "Abrindo…"; erro.textContent = "";
+  try {
+    const k = await chaveDaSenha(document.getElementById("senha").value);
+    if (document.getElementById("lembrar").checked) {
+      const raw = new Uint8Array(await crypto.subtle.exportKey("raw", k));
+      try { localStorage.setItem(CHAVE, btoa(String.fromCharCode(...raw))); } catch (e2) {}
+    }
+    await abrir(k);
+  } catch (err) {
+    erro.textContent = err.message === "rede" ? "Não consegui baixar o conteúdo. Verifique a conexão." : "Senha incorreta.";
+    try { localStorage.removeItem(CHAVE); } catch (e2) {}
+    ok.disabled = false; ok.textContent = "Abrir";
+  }
+});
+</script>
+</body>
+</html>
